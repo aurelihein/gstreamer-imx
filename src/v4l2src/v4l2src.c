@@ -33,6 +33,7 @@
 #include "v4l2_buffer_pool.h"
 
 #define DEFAULT_CAPTURE_MODE 0
+#define DEFAULT_CAPTURE_FORMAT 0
 #define DEFAULT_FRAMERATE_NUM 30
 #define DEFAULT_FRAMERATE_DEN 1
 #define DEFAULT_INPUT 1
@@ -47,6 +48,7 @@ enum
 {
 	IMX_V4L2SRC_0,
 	IMX_V4L2SRC_CAPTURE_MODE,
+	IMX_V4L2SRC_CAPTURE_FORMAT,
 	IMX_V4L2SRC_FRAMERATE_NUM,
 	IMX_V4L2SRC_INPUT,
 	IMX_V4L2SRC_DEVICE,
@@ -116,7 +118,11 @@ static gint gst_imx_v4l2src_capture_setup(GstImxV4l2VideoSrc *v4l2src)
 	GST_DEBUG_OBJECT(v4l2src, "pixelformat = %d  field = %d", fmt.fmt.pix.pixelformat, fmt.fmt.pix.field);
 
 	fszenum.index = v4l2src->capture_mode;
-	fszenum.pixel_format = fmt.fmt.pix.pixelformat;
+	fszenum.pixel_format =
+		(v4l2src->capture_format == DEFAULT_CAPTURE_FORMAT ?
+			V4L2_PIX_FMT_YUV420 : V4L2_PIX_FMT_SBGGR8);
+	GST_DEBUG_OBJECT(v4l2src, "pixelformat = %d  field = %d", fmt.fmt.pix.pixelformat, fmt.fmt.pix.field);
+
 	if (ioctl(fd_v4l, VIDIOC_ENUM_FRAMESIZES, &fszenum) < 0) {
 		GST_ERROR_OBJECT(v4l2src, "VIDIOC_ENUM_FRAMESIZES failed: %s", strerror(errno));
 		close(fd_v4l);
@@ -151,6 +157,9 @@ static gint gst_imx_v4l2src_capture_setup(GstImxV4l2VideoSrc *v4l2src)
 	}
 
 	fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	fmt.fmt.pix.pixelformat =
+		(v4l2src->capture_format == DEFAULT_CAPTURE_FORMAT ?
+			V4L2_PIX_FMT_YUV420 : V4L2_PIX_FMT_SBGGR8);
 	fmt.fmt.pix.bytesperline = 0;
 	fmt.fmt.pix.priv = 0;
 	fmt.fmt.pix.sizeimage = 0;
@@ -322,14 +331,26 @@ static gboolean gst_imx_v4l2src_negotiate(GstBaseSrc *src)
 
 	/* not much to negotiate;
 	 * we already performed setup, so that is what will be streamed */
-	caps = gst_caps_new_simple("video/x-raw",
-			"format", G_TYPE_STRING, pixel_format,
-			"width", G_TYPE_INT, v4l2src->capture_width,
-			"height", G_TYPE_INT, v4l2src->capture_height,
-			"interlace-mode", G_TYPE_STRING, interlace_mode,
-			"framerate", GST_TYPE_FRACTION, v4l2src->fps_n, v4l2src->fps_d,
-			"pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,
-			NULL);
+	if (v4l2src->capture_format == DEFAULT_CAPTURE_FORMAT) {
+		caps = gst_caps_new_simple("video/x-raw",
+				"format", G_TYPE_STRING, "I420",
+				"width", G_TYPE_INT, v4l2src->capture_width,
+				"height", G_TYPE_INT, v4l2src->capture_height,
+				"interlace-mode", G_TYPE_STRING, interlace_mode,
+				"framerate", GST_TYPE_FRACTION, v4l2src->fps_n, v4l2src->fps_d,
+				"pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,
+				NULL);
+	}
+	else {
+		caps = gst_caps_new_simple("video/x-bayer",
+				"format", G_TYPE_STRING, "bggr",
+				"width", G_TYPE_INT, v4l2src->capture_width,
+				"height", G_TYPE_INT, v4l2src->capture_height,
+				"interlace-mode", G_TYPE_STRING, interlace_mode,
+				"framerate", GST_TYPE_FRACTION, v4l2src->fps_n, v4l2src->fps_d,
+				"pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,
+				NULL);
+	}
 
 	GST_INFO_OBJECT(src, "negotiated caps %" GST_PTR_FORMAT, (gpointer)caps);
 
@@ -340,20 +361,30 @@ static GstCaps *gst_imx_v4l2src_get_caps(GstBaseSrc *src, GstCaps *filter)
 {
 	GstImxV4l2VideoSrc *v4l2src = GST_IMX_V4L2SRC(src);
 	GstCaps *caps;
-	const gchar *pixel_format = "I420";
 	const gchar *interlace_mode = "progressive";
 
 	GST_INFO_OBJECT(v4l2src, "get caps filter %" GST_PTR_FORMAT, (gpointer)filter);
 
-	caps = gst_caps_new_simple("video/x-raw",
-			"format", G_TYPE_STRING, pixel_format,
-			"width", GST_TYPE_INT_RANGE, 16, G_MAXINT,
-			"height", GST_TYPE_INT_RANGE, 16, G_MAXINT,
+	if (v4l2src->capture_format == DEFAULT_CAPTURE_FORMAT) {
+		caps = gst_caps_new_simple("video/x-raw",
+				"format", G_TYPE_STRING, "I420",
+				"width", GST_TYPE_INT_RANGE, 16, G_MAXINT,
+				"height", GST_TYPE_INT_RANGE, 16, G_MAXINT,
 			"interlace-mode", G_TYPE_STRING, interlace_mode,
-			"framerate", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
-			"pixel-aspect-ratio", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
-			NULL);
-
+				"framerate", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
+				"pixel-aspect-ratio", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
+				NULL);
+	}
+	else {
+		caps = gst_caps_new_simple("video/x-bayer",
+				"format", G_TYPE_STRING, "bggr",
+				"width", GST_TYPE_INT_RANGE, 16, G_MAXINT,
+				"height", GST_TYPE_INT_RANGE, 16, G_MAXINT,
+			"interlace-mode", G_TYPE_STRING, interlace_mode,
+				"framerate", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
+				"pixel-aspect-ratio", GST_TYPE_FRACTION_RANGE, 0, 1, 100, 1,
+				NULL);
+	}
 	GST_INFO_OBJECT(v4l2src, "get caps %" GST_PTR_FORMAT, (gpointer)caps);
 
 	return caps;
@@ -377,6 +408,10 @@ static void gst_imx_v4l2src_set_property(GObject *object, guint prop_id,
 	{
 		case IMX_V4L2SRC_CAPTURE_MODE:
 			v4l2src->capture_mode = g_value_get_int(value);
+			break;
+
+		case IMX_V4L2SRC_CAPTURE_FORMAT:
+			v4l2src->capture_format = g_value_get_int(value);
 			break;
 
 		case IMX_V4L2SRC_FRAMERATE_NUM:
@@ -430,6 +465,10 @@ static void gst_imx_v4l2src_get_property(GObject *object, guint prop_id,
 			g_value_set_int(value, v4l2src->capture_mode);
 			break;
 
+		case IMX_V4L2SRC_CAPTURE_FORMAT:
+			g_value_set_int(value, v4l2src->capture_format);
+			break;
+
 		case IMX_V4L2SRC_FRAMERATE_NUM:
 			g_value_set_int(value, v4l2src->fps_n);
 			break;
@@ -471,6 +510,7 @@ static void gst_imx_v4l2src_get_property(GObject *object, guint prop_id,
 static void gst_imx_v4l2src_init(GstImxV4l2VideoSrc *v4l2src)
 {
 	v4l2src->capture_mode = DEFAULT_CAPTURE_MODE;
+	v4l2src->capture_format = DEFAULT_CAPTURE_FORMAT;
 	v4l2src->fps_n = DEFAULT_FRAMERATE_NUM;
 	v4l2src->fps_d = DEFAULT_FRAMERATE_DEN;
 	v4l2src->input = DEFAULT_INPUT;
@@ -512,6 +552,14 @@ static void gst_imx_v4l2src_class_init(GstImxV4l2VideoSrcClass *klass)
 				"\t\t\t\tov5640_mode_720P_1280_720 = 4,\n"
 				"\t\t\t\tov5640_mode_1080P_1920_1080 = 5",
 				0, G_MAXINT, DEFAULT_CAPTURE_MODE,
+				G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+	g_object_class_install_property(gobject_class, IMX_V4L2SRC_CAPTURE_FORMAT,
+			g_param_spec_int("capture-format", "Capture format",
+				"Capture format of camera,\n"
+				"\t\t\t\tI420 = 0,\n"
+				"\t\t\t\tBAYER_BGGR8 = 1,\n",
+				0, 1, DEFAULT_CAPTURE_FORMAT,
 				G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
 	g_object_class_install_property(gobject_class, IMX_V4L2SRC_FRAMERATE_NUM,
