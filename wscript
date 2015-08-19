@@ -186,6 +186,7 @@ def configure(conf):
 	conf.recurse('src/ipu')
 	conf.recurse('src/vpu')
 	conf.recurse('src/eglvivsink')
+	conf.recurse('src/imxbayer')
 	conf.recurse('src/v4l2src')
 	conf.recurse('src/audio')
 
@@ -201,6 +202,7 @@ def build(bld):
 	bld.recurse('src/ipu')
 	bld.recurse('src/vpu')
 	bld.recurse('src/eglvivsink')
+	bld.recurse('src/imxbayer')
 	bld.recurse('src/v4l2src')
 	bld.recurse('src/audio')
 	bld.recurse('src/blitter')
